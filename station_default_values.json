@@ -1,0 +1,22 @@
+{
+    "0": {
+        "latitude": 0.0,
+        "longitude": 0.0,
+        "min_elevation": 0.0,
+        "measurements_interval": 10.0,
+        "noise_amplitudes": {
+            "distance": 0.001,
+            "doppler": 0.001
+        }
+    },
+    "1": {
+        "latitude": 0.0,
+        "longitude": 90.0,
+        "min_elevation": 0.0,
+        "measurements_interval": 10.0,
+        "noise_amplitudes": {
+            "distance": 0.001,
+            "doppler": 0.001
+        }
+    }
+}
