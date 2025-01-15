@@ -1,5 +1,5 @@
 {
-    "arc_duration": 864000.0,
+    "arc_duration": 86400.0,
     "dR_tol_max": 1.0,
     "max_step": 100.0,
     "convergence_epsilon": 1e-3

@@ -120,7 +120,7 @@ def theoretical_measurements(
 ) -> tuple[dict[str, ndarray[float]], ndarray[float]]:
 
     # Interpolates the orbit at the measurement times.
-    y_on_measurements = interpolation(x=measurement_times)
+    y_on_measurements: ndarray = interpolation(x=measurement_times)
     n_times = len(y_on_measurements)
 
     # Generates theoretical station position with respect to time.
@@ -151,7 +151,7 @@ def theoretical_measurements(
     )  # Axes: (time, distance/doppler, coordinate).
 
     # Formats dr_j/dgamma_i. Axes: (time, coordinate, parameter).
-    dr_j_dgamma_i: ndarray = array(object=y_on_measurements)[:, 6:].reshape((n_times, -1, 6)).transpose((0, 2, 1))
+    dr_j_dgamma_i: ndarray = y_on_measurements[:, 6:].reshape((n_times, -1, 6)).transpose((0, 2, 1))
 
     # Leibniz formula.
     A_mat = zeros(shape=(n_measurement_types * n_times, dr_j_dgamma_i.shape[2]))

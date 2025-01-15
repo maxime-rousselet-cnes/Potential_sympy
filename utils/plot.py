@@ -15,6 +15,6 @@ def plot_orbit_iterations(result_file_name: str = "results", figsize: tuple[floa
     for iteration_folder in iteration_folders:
         t = array(object=load_base_model(path=iteration_folder, name="t"))
         orbit = array(object=load_base_model(path=iteration_folder, name="orbit"))
-        plot(t / (3600 * 24), [(norm(R=R) - default_parameters["R_T"]) / 1e3 for R in orbit], label=iteration_folder.name)
+        plot(t / 3600, [(norm(R=R) - default_parameters["R_T"]) / 1e3 for R in orbit], label=iteration_folder.name)
     legend()
     show()
