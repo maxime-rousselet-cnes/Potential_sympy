@@ -25,7 +25,7 @@ station_parameter_names.sort()
 POSITION_SYMBOLS: dict[str, Symbol] = {coordinate: symbol for coordinate, symbol in zip(positions, symbols(" ".join(positions)))}
 PARAMETER_SYMBOLS: dict[str, Symbol] = {parameter: symbol for parameter, symbol in zip(parameter_names, symbols(" ".join(parameter_names)))}
 R_SYM: MutableDenseMatrix = Matrix([symbol for symbol in POSITION_SYMBOLS.values()])
-INITIAL_DYNAMICAL_VALUES: dict[str, ndarray] = {coordinate: row for coordinate, row in zip(positions, eye(N=6))}
+INITIAL_DYNAMICAL_VALUES: dict[str, ndarray] = {coordinate + "_0": row for coordinate, row in zip(positions, eye(N=6))}
 station_coordinates = [coordinate + "_station" for coordinate in positions]
 R_STATION_SYMBOLS: dict[str, Symbol] = {coordinate: symbol for coordinate, symbol in zip(station_coordinates, symbols(" ".join(station_coordinates)))}
 R_STATION_SYM: MutableDenseMatrix = Matrix([symbol for symbol in R_STATION_SYMBOLS.values()])

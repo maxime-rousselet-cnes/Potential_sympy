@@ -5,7 +5,7 @@ from numpy import array, concatenate, matmul, ndarray
 from numpy.linalg import cholesky
 from scipy.linalg import solve_triangular
 
-from .constants import EPSILON_ARC_DURATION, INF
+from .constants import EPSILON_ARC_DURATION, INF, positions
 from .integrate import integrate, interpolate, theoretical_measurements
 from .measurement_models import get_station_parameters_without_noise
 from .utils import load_base_model, save_base_model
@@ -50,7 +50,11 @@ def orbit_restitution(
     )[0]
 
     parameter_names = list(parameter_initial_values.keys())
-    parameters = parameter_default_values | parameter_initial_values
+    parameters = (
+        parameter_default_values
+        | {position + "_0": initial_position for position, initial_position in zip(positions, measurement_data["R_0"])}
+        | parameter_initial_values
+    )
 
     # Clears result folder.
     remove_folder(result_folder_name)
@@ -114,7 +118,7 @@ def orbit_restitution(
 
         # Update parameters.
         for parameter, delta_gamma in zip(parameter_names, x.flatten()):
-            parameters[parameter] += delta_gamma
+            parameters[parameter] += integration_parameters["learning_rate"] * delta_gamma
 
         # With iteration number, saves the orbit, normal equations as A, B and parameter updated values.
         base_name = result_folder_name + "/" + str(iteration) + "/"
