@@ -2,8 +2,12 @@ from json import JSONEncoder, dump, load
 from pathlib import Path
 from typing import Any, Optional
 
-from numpy import array, ndarray
+from numpy import array, cos, ndarray, pi, sin, sqrt
 from pydantic import BaseModel
+
+
+def norm(R: ndarray[float]) -> float:
+    return (sum(R[:3].flatten() ** 2)) ** 0.5
 
 
 class JSONSerialize(JSONEncoder):
@@ -83,10 +87,11 @@ def update_parameters(parameters: dict[str, float], potential: list[list[list[fl
                 i=parameters["i_0"],
                 Omega_RAAN=parameters["Omega_RAAN_0"],
                 omega=parameters["omega_0"],
-                nu=parameters["nu_0"],
+                E=parameters["E_0"],
+                GM=parameters["GM"],
             )
         )
-        for element in ["a_0", "e_0", "i_0", "Omega_RAAN_0", "omega_0", "nu_0"]:
+        for element in ["a_0", "e_0", "i_0", "Omega_RAAN_0", "omega_0", "E_0"]:
             del parameters[element]
 
     return parameters
@@ -132,6 +137,35 @@ def get_parameters(
     )
 
 
-def orbital_to_cartesian(a: float, e: float, i: float, Omega_RAAN: float, omega: float, nu: float) -> tuple[float, float, float, float, float, float]:
-    # TODO.
-    return a, e, i, Omega_RAAN, omega, nu
+def orbital_to_cartesian(
+    a: float, e: float, i: float, Omega_RAAN: float, omega: float, E: float, GM: float
+) -> tuple[float, float, float, float, float, float]:
+    Omega_RAAN = pi / 180 * Omega_RAAN
+    omega = pi / 180 * omega
+    i = pi / 180 * i
+    E = pi / 180 * E
+    p = array(
+        object=[
+            cos(Omega_RAAN) * cos(omega) - cos(i) * sin(Omega_RAAN) * sin(omega),
+            sin(Omega_RAAN) * cos(omega) + cos(i) * cos(Omega_RAAN) * sin(omega),
+            sin(i) * sin(omega),
+        ]
+    )
+    q = array(
+        object=[
+            -cos(Omega_RAAN) * sin(omega) - cos(i) * sin(Omega_RAAN) * cos(omega),
+            -sin(Omega_RAAN) * sin(omega) + cos(i) * cos(Omega_RAAN) * cos(omega),
+            sin(i) * cos(omega),
+        ]
+    )
+    sqrt_fact = sqrt(1 - e**2)
+    x_p = a * (cos(E) - e)
+    y_q = a * sqrt_fact * sin(E)
+    position = x_p * p + y_q * q
+    n = sqrt(GM / a**3)
+    r = norm(R=position)
+    dE_dt = n * a / r
+    x_dot_p = -a * dE_dt * sin(E)
+    y_dot_q = a * dE_dt * sqrt_fact * cos(E)
+    speed = x_dot_p * p + y_dot_q * q
+    return position[0], position[1], position[2], speed[0], speed[1], speed[2]

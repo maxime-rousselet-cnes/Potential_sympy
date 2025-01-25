@@ -16,10 +16,7 @@ from .measurement_models import (
     dQ_dr_model_generation,
     measurement_models,
 )
-
-
-def norm(R: ndarray[float]) -> float:
-    return (sum(R[:3].flatten() ** 2)) ** 0.5
+from .utils import norm
 
 
 def integrate(
