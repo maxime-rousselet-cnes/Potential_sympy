@@ -1,23 +1,27 @@
-from numpy import eye, ndarray
+from pathlib import Path
+
+from numpy import eye, ndarray, zeros
 from sympy import Matrix, MutableDenseMatrix, Symbol, symbols
 
-from .utils import load_base_model
+from .utils import load_base_model, update_parameters
 
 INF = 1e50
 EPSILON = 1e-13
 
-DEFAULT_H = 175e3
-
 EPSILON_ARC_DURATION = 1000.0
+
+DEFAULT_PATH = Path(".").joinpath("examples").joinpath("default")
+N_MAX = 2
 
 
 positions = ["X", "Y", "Z", "X_dot", "Y_dot", "Z_dot"]
-default_parameters: dict[str, float] = load_base_model("parameter_default_values")
+default_parameters: dict[str, float] = load_base_model(name="parameters", path=DEFAULT_PATH)
+default_parameters = update_parameters(parameters=default_parameters, potential=zeros(shape=(2, N_MAX + 1, N_MAX + 1)))
 parameter_names = default_parameters.keys()
-all_station_default_parameters: dict[str, dict[str, float | dict[str, float]]] = load_base_model("station_default_values")
+all_station_default_parameters: dict[str, dict[str, float | dict[str, float]]] = load_base_model(name="stations", path=DEFAULT_PATH)
 station_parameter_names = set()
 for _, station_default_parameters in all_station_default_parameters.items():
-    del station_default_parameters["noise_amplitudes"]
+    del station_default_parameters["static_parameters"]
     station_parameter_names.update(station_default_parameters.keys())
 station_parameter_names = list(station_parameter_names)
 station_parameter_names.sort()

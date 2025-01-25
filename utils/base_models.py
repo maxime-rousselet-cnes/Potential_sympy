@@ -22,7 +22,7 @@ def str_dict_to_symbol_dict(str_dictionary: dict[str, float], symbol_dictionary:
 
 
 def evaluate_for_parameters(
-    expression: Expr, symbols_to_values: dict[Symbol, float], additional_symbols: tuple = (), position_dependent: bool = True
+    expression: Expr, symbols_to_values: dict[Symbol, float] = {}, additional_symbols: tuple = (), position_dependent: bool = True
 ) -> Callable:
     with evaluate(False):
         simplified_model = expression if symbols_to_values == {} else expression.xreplace(rule=symbols_to_values)

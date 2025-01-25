@@ -1,7 +1,0 @@
-{
-    "arc_duration": 86400.0,
-    "dR_tol_max": 0.1,
-    "max_step": 100.0,
-    "convergence_epsilon": 1e-3,
-    "learning_rate": 0.99
-}

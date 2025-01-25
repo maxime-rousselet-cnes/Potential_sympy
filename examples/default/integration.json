@@ -1,0 +1,9 @@
+{
+    "arc_duration": 86164,
+    "dR_tol_max": 1e-3,
+    "max_step": 10.0,
+    "convergence_epsilon": 0.09,
+    "max_iterations": 10,
+    "altitude_limit": 200.0e3,
+    "interpolation_order": 3
+}

@@ -1,14 +1,16 @@
+from multiprocessing import Pool
 from os import path, remove, rmdir, walk
 from os.path import exists
+from pathlib import Path
+from typing import Callable, Optional
 
 from numpy import array, concatenate, matmul, ndarray
-from numpy.linalg import cholesky
-from scipy.linalg import solve_triangular
+from scipy.linalg import cholesky, solve_triangular
 
 from .constants import EPSILON_ARC_DURATION, INF, positions
 from .integrate import integrate, interpolate, theoretical_measurements
-from .measurement_models import get_station_parameters_without_noise
-from .utils import load_base_model, save_base_model
+from .measurement_models import get_station_dyamic_parameters
+from .utils import get_parameters, load_base_model, save_base_model
 
 
 def measurements_to_matrix(measurements: dict[str, ndarray]) -> ndarray:
@@ -29,74 +31,85 @@ def remove_folder(folder_path):
         rmdir(folder_path)
 
 
-def orbit_restitution(
-    measurements_file_name: str = "measurements",
-    parameter_default_values_file_name: str = "parameter_default_values",
-    parameter_initial_values_file_name: str = "parameter_initial_values",
-    station_default_values_file_name: str = "station_default_values",
-    integration_default_values_file_name: str = "integration_default_values",
-    result_folder_name: str = "results",
-) -> None:
+def generate_matrices(
+    parameters: dict[str, float],
+    interpolation: Callable,
+    parameter_names: list[str],
+    station_measurements: dict[str, list[float]],
+    station_parameters: dict[str, float | dict[str, float]],
+) -> dict[str, ndarray]:
+    station_dyamic_parameters = get_station_dyamic_parameters(station_parameters=station_parameters)
 
-    # Gets all default/initial values and measurements.
-    measurement_data: dict = load_base_model(name=measurements_file_name)
-    station_measurements: dict[str, dict[str, list[float]]] = measurement_data["stations"]
-    parameter_default_values: dict[str, float] = load_base_model(name=parameter_default_values_file_name)
-    parameter_initial_values: dict[str, float] = load_base_model(name=parameter_initial_values_file_name)
-    stations: dict[str, float] = load_base_model(name=station_default_values_file_name)
-    integration_parameters = (
-        load_base_model(name=integration_default_values_file_name)
-        | {"arc_duration": max([measurements["measurement_times"][-1] for _, measurements in station_measurements.items()]) + EPSILON_ARC_DURATION},
-    )[0]
-
-    parameter_names = list(parameter_initial_values.keys())
-    parameters = (
-        parameter_default_values
-        | {position + "_0": initial_position for position, initial_position in zip(positions, measurement_data["R_0"])}
-        | parameter_initial_values
+    # Gets dQ_j/dgamma_i via Leibniz formula.
+    measurements, A_matrix = theoretical_measurements(
+        parameters=parameters,
+        station_parameters=station_parameters,
+        station_dynamic_parameters=station_dyamic_parameters,
+        measurement_times=station_measurements["measurement_times"],
+        interpolation=interpolation,
+        parameter_names=parameter_names,
     )
 
+    # Builds B as Delta_Q_j. Current_residuals.
+    B_matrix = measurements_to_matrix(measurements=station_measurements) - measurements_to_matrix(measurements=measurements)
+
+    return {"A": A_matrix, "B": B_matrix}
+
+
+def orbit_restitution(
+    case_name: Optional[str] = None,
+) -> None:
+
+    if case_name is None:
+        case_name = "default"
+
+    # Gets all default/initial values and measurements.
+    measurement_data: dict = load_base_model(name="measurements", path=Path("examples").joinpath(case_name))
+    all_station_measurements: dict[str, dict[str, list[float]]] = measurement_data["stations"]
+    stations, parameters, integration_parameters, parameter_names, _ = get_parameters(case_name=case_name)
+
+    # Sets the arc to the minimum duration to get all measurements.
+    integration_parameters["arc_duration"] = (
+        max(
+            [
+                measurements["measurement_times"][-1]
+                for _, measurements in all_station_measurements.items()
+                if "measurement_times" in measurements.keys() and len(measurements["measurement_times"]) != 0
+            ]
+        )
+        + EPSILON_ARC_DURATION
+    )
+    integration_parameters["altitude_limit"] = -1.0
+
+    # Updates the initial-initial position.
+    parameters = parameters | {position + "_0": initial_position for position, initial_position in zip(positions, measurement_data["R_0"])}
+    parameter_names += [position + "_0" for position in positions]
+
     # Clears result folder.
-    remove_folder(result_folder_name)
+    result_folder = Path("examples").joinpath(case_name).joinpath("results")
+    remove_folder(result_folder)
 
     # Infinite initial residuals so the algorithm does not stop at first iteration.
     previous_residuals = array(object=[INF])
-    iteration = 0
-    while True:
+
+    for iteration in range(integration_parameters["max_iterations"]):
 
         # Integrate the orbit and the variation equations.
         t, y = integrate(parameters=parameters, integration_parameters=integration_parameters, parameter_names=parameter_names)
 
         # Interpolates.
-        interpolation = interpolate(t=t, y=y)
+        interpolation = interpolate(t=t, y=y, integration_parameters=integration_parameters)
 
         # Builds normal equations.
-        A_matrices = {}
-        B_matrices = {}
-        for id, station_parameters in stations.items():
-
-            station_parameters_without_noise = get_station_parameters_without_noise(station_parameters=station_parameters)
-            noise_amplitudes: dict[str, float] = station_parameters["noise_amplitudes"]
-            measurement_types = noise_amplitudes.keys()
-            n_measurement_types = len(measurement_types)
-
-            # Gets dQ_j/dgamma_i via Leibniz formula.
-            measurements, A_matrices[id] = theoretical_measurements(
-                parameters=parameters,
-                station_parameters=station_parameters_without_noise,
-                measurement_times=station_measurements[id]["measurement_times"],
-                t=t,
-                interpolation=interpolation,
-                n_measurement_types=n_measurement_types,
-                measurement_types=measurement_types,
+        with Pool() as p:
+            all_matrices = p.starmap(
+                generate_matrices,
+                [(parameters, interpolation, parameter_names, all_station_measurements[id], stations[id]) for id in stations.keys()],
             )
 
-            # Builds B as Delta_Q_j. Current_residuals.
-            B_matrices[id] = measurements_to_matrix(measurements=station_measurements[id]) - measurements_to_matrix(measurements=measurements)
-
         # Cumulates.
-        A_matrix: ndarray = concatenate(list(A_matrices.values()))
-        B_matrix: ndarray = concatenate(list(B_matrices.values()))
+        A_matrix: ndarray = concatenate(list(matrices["A"] for matrices in all_matrices))
+        B_matrix: ndarray = concatenate(list(matrices["B"] for matrices in all_matrices))
 
         # Stop criterion on parameter convergence.
         convergence_criterion = abs(SE(B=previous_residuals) - SE(B=B_matrix)) / SE(B=previous_residuals)
@@ -105,27 +118,25 @@ def orbit_restitution(
             break
         else:
             previous_residuals = B_matrix
-            iteration += 1
 
         # Builds semi-definite positive system to solve.
         N_matrix: ndarray = matmul(A_matrix.T, A_matrix)
         S_matrix: ndarray = matmul(A_matrix.T, B_matrix)
 
         # Solves normal equations via Cholesky.
-        L_matrix: ndarray = cholesky(N_matrix)
+        L_matrix: ndarray = cholesky(N_matrix, lower=True)
         Z_matrix: ndarray = solve_triangular(a=L_matrix, b=S_matrix, lower=True)
         x: ndarray = solve_triangular(a=L_matrix.T, b=Z_matrix)
 
         # Update parameters.
         for parameter, delta_gamma in zip(parameter_names, x.flatten()):
-            parameters[parameter] += integration_parameters["learning_rate"] * delta_gamma
+            parameters[parameter] += delta_gamma
 
         # With iteration number, saves the orbit, normal equations as A, B and parameter updated values.
-        base_name = result_folder_name + "/" + str(iteration) + "/"
-        save_base_model(obj=t, name=base_name + "t")
-        save_base_model(obj=y, name=base_name + "orbit")
-        save_base_model(obj=A_matrix, name=base_name + "A")
-        save_base_model(obj=B_matrix, name=base_name + "B")
+        save_path = result_folder.joinpath(str(iteration))
+        save_base_model(obj={"t": t, "y": y}, name="orbit", path=save_path)
+        save_base_model(obj=A_matrix, name="A", path=save_path)
+        save_base_model(obj=B_matrix, name="B", path=save_path)
         save_base_model(
-            obj={parameter: value for parameter, value in parameters.items() if parameter in parameter_names}, name=base_name + "parameter_values"
+            obj={parameter: value for parameter, value in parameters.items() if parameter in parameter_names}, name="parameter_values", path=save_path
         )

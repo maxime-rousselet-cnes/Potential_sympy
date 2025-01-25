@@ -1,0 +1,19 @@
+{
+    "GM": 398600435507000.0,
+    "R_T": 6378137.0,
+    "C_x": 2.0,
+    "surface_mass_ratio": 1e-2,
+    "rho_thermosphere_base": 1e-10,
+    "thermosphere_ref_altitude": 200e3,
+    "thermosphere_scale_factor": 100e3,
+    "Earth_mean_TOD": 86164.0,
+    "m_3": 0.0,
+    "solar_radiation_pressure": 5e-6,
+    "reflexivity": 0.3,
+    "a_0": 0.0,
+    "e_0": 6728137.0,
+    "i_0": 0.0,
+    "Omega_RAAN_0": -5433.4,
+    "omega_0": 0.0,
+    "nu_0": 5433.4
+}

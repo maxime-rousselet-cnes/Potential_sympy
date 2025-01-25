@@ -44,9 +44,12 @@ def load_base_model(
     Loads a JSON serializable type.
     """
     filepath = path.joinpath(name + ("" if ".json" in name else ".json"))
-    with open(filepath, "r") as file:
-        loaded_content = load(fp=file)
-    return loaded_content if not base_model_type else base_model_type(**loaded_content)
+    if filepath.exists():
+        with open(filepath, "r") as file:
+            loaded_content = load(fp=file)
+        return loaded_content if not base_model_type else base_model_type(**loaded_content)
+    else:
+        return {}
 
 
 def rotation_matrix(u: ndarray[float], c: float, s: float) -> ndarray[float]:
@@ -57,3 +60,78 @@ def rotation_matrix(u: ndarray[float], c: float, s: float) -> ndarray[float]:
             [u[0] * u[2] * (1 - c) - u[1] * s, u[1] * u[2] * (1 - c) + u[0] * s, u[2] ** 2 * (1 - c) + c],
         ]
     )
+
+
+def update_parameters(parameters: dict[str, float], potential: list[list[list[float]]]) -> dict[str, float]:
+
+    # Update parameters with potential field parameters.
+    for phase_name, phase in zip(["C", "S"], potential):
+        for degree, values in enumerate(phase):
+            if degree == 0:
+                continue
+            for order, value in enumerate(values[: degree + 1]):
+                if phase_name == "S" and order == 0:
+                    continue
+                parameters["_".join((phase_name, str(degree), str(order)))] = value
+
+    # Orbital to cartesian.
+    if "a_0" in parameters.keys():
+        parameters["X_0"], parameters["Y_0"], parameters["Z_0"], parameters["X_dot_0"], parameters["Y_dot_0"], parameters["Z_dot_0"] = (
+            orbital_to_cartesian(
+                a=parameters["a_0"],
+                e=parameters["e_0"],
+                i=parameters["i_0"],
+                Omega_RAAN=parameters["Omega_RAAN_0"],
+                omega=parameters["omega_0"],
+                nu=parameters["nu_0"],
+            )
+        )
+        for element in ["a_0", "e_0", "i_0", "Omega_RAAN_0", "omega_0", "nu_0"]:
+            del parameters[element]
+
+    return parameters
+
+
+def get_parameters(
+    case_name: Optional[str] = None, restitution: bool = True, path: Path = Path(".").joinpath("examples")
+) -> tuple[dict[str, dict[str, float | dict[str, float]]], dict[str, float], dict[str, float], Optional[list[str]], Optional[dict[str, float]]]:
+
+    # Load all parameter files.
+    if case_name is None:
+        case_name = "default"
+    case_path = path.joinpath(case_name)
+    if case_name != "default":
+        case_path = case_path.joinpath("initial_values" if restitution else "measurements_generation")
+    stations: dict[str, dict[str, float | dict]] = load_base_model(name="stations", path=case_path)
+    parameters: dict = load_base_model(name="parameters", path=case_path)
+    potential = load_base_model(name="potential", path=case_path)
+    integration_parameters = load_base_model(name="integration", path=case_path)
+    initial_position_uncertainty = load_base_model(name="initial_position_uncertainty", path=case_path)
+
+    # Updates parameters with potential field parameters.
+    parameters = update_parameters(parameters=parameters, potential=potential)
+
+    # Returns default case.
+    if case_name == "default":
+        return stations, parameters, integration_parameters, None, initial_position_uncertainty
+
+    # Updates default values.
+    default_stations, default_parameters, default_integration_parameters, _, default_initial_position_uncertainty = get_parameters(
+        case_name="default", path=path
+    )
+    for parameter in list(parameters.keys()):
+        if default_parameters[parameter] == parameters[parameter]:
+            del parameters[parameter]
+
+    return (
+        default_stations | stations,
+        default_parameters | parameters,
+        default_integration_parameters | integration_parameters,
+        list(parameters.keys()),
+        default_initial_position_uncertainty | initial_position_uncertainty,
+    )
+
+
+def orbital_to_cartesian(a: float, e: float, i: float, Omega_RAAN: float, omega: float, nu: float) -> tuple[float, float, float, float, float, float]:
+    # TODO.
+    return a, e, i, Omega_RAAN, omega, nu
