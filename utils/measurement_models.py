@@ -27,7 +27,9 @@ T = Symbol("T")
 STATION_ANGLES_MODEL = station_angles(station_parameters=STATION_PARAMETER_SYMBOLS, parameters=PARAMETER_SYMBOLS, t=T)
 
 
-def station_position(parameters: dict[str, Symbol], station_parameters: dict[str, Symbol], t: Symbol) -> MutableDenseMatrix:
+def station_position(
+    parameters: dict[str, Symbol], station_parameters: dict[str, Symbol], t: Symbol
+) -> MutableDenseMatrix:  # TODO: include station speeds here.
     _, cos_latitude, sin_latitude, cos_longitude, sin_longitude = station_angles(station_parameters=station_parameters, parameters=parameters, t=t)
     normalized_position_in_solid_Earth_reference_frame = Matrix([cos_latitude * cos_longitude, cos_latitude * sin_longitude, sin_latitude])
     normalized_inertial_speed_in_solid_Earth_reference_frame = Matrix([-cos_latitude * sin_longitude, cos_latitude * cos_longitude, 0.0])
@@ -35,7 +37,7 @@ def station_position(parameters: dict[str, Symbol], station_parameters: dict[str
     Earth_rotation_matrix = rotation_matrix(u=[0, 0, 1], c=cos(Earth_rotation_angle), s=sin(Earth_rotation_angle))
     normalized_position = Matrix(matmul(Earth_rotation_matrix, normalized_position_in_solid_Earth_reference_frame))
     normalized_inertial_speed = Matrix(matmul(Earth_rotation_matrix, normalized_inertial_speed_in_solid_Earth_reference_frame))
-    return parameters["R_T"] * Matrix.vstack(normalized_position, normalized_inertial_speed)
+    return (parameters["R_T"] + station_parameters["altitude"]) * Matrix.vstack(normalized_position, normalized_inertial_speed)
 
 
 def station_positions_sym(

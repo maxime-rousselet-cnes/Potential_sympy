@@ -34,7 +34,12 @@ def visibility_dichotomy(get_visibility: Callable, t_i: float, t_j: float, inter
 
 
 def generate_measurement_per_station(
-    t: ndarray, y: ndarray, interpolation: BSpline, station_parameters: dict[str, float | dict[str, float]], parameters: dict[str, float]
+    t: ndarray,
+    y: ndarray,
+    interpolation: BSpline,
+    station_parameters: dict[str, float | dict[str, float]],
+    parameters: dict[str, float],
+    min_time_limit: float,
 ) -> dict[str, ndarray]:
 
     station_dyamic_parameters = get_station_dyamic_parameters(station_parameters=station_parameters)
@@ -56,7 +61,7 @@ def generate_measurement_per_station(
         min_elevation, cos_latitude, sin_latitude, cos_longitude, sin_longitude = tuple(station_angles.T[0])
         longitude_rotation_matrix = rotation_matrix(u=[0, 0, 1], c=cos_longitude, s=-sin_longitude)  # - lon rotation around Z axis.
         latitude_rotation_matrix = rotation_matrix(u=[0, 1, 0], c=sin_latitude, s=-cos_latitude)  # + (pi/2 - lat) rotation around Y axis.
-        return 1 * in_view(
+        return (t >= min_time_limit) * in_view(
             R_T=parameters["R_T"],
             longitude_rotation_matrix=longitude_rotation_matrix,
             latitude_rotation_matrix=latitude_rotation_matrix,
@@ -116,7 +121,7 @@ def generate_measurements(
 ) -> None:
 
     # Gets all default values.
-    stations, parameters, integration_parameters, _, initial_position_uncertainty = get_parameters(case_name=case_name, restitution=False)
+    stations, parameters, integration_parameters, _, initial_position_uncertainty, _ = get_parameters(case_name=case_name, restitution=False)
 
     # Integrates model orbit.
     t, y = integrate(
@@ -136,7 +141,10 @@ def generate_measurements(
                 stations.keys(),
                 p.starmap(
                     generate_measurement_per_station,
-                    [(t, y, interpolation, station_parameters, parameters) for station_parameters in stations.values()],
+                    [
+                        (t, y, interpolation, station_parameters, parameters, integration_parameters["min_time_limit"])
+                        for station_parameters in stations.values()
+                    ],
                 ),
             )
         }

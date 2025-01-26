@@ -3,7 +3,7 @@ from pathlib import Path
 from numpy import eye, ndarray, zeros
 from sympy import Matrix, MutableDenseMatrix, Symbol, symbols
 
-from .utils import load_base_model, update_parameters
+from .utils import load_base_model, positions, update_parameters
 
 INF = 1e50
 EPSILON = 1e-13
@@ -14,7 +14,6 @@ DEFAULT_PATH = Path(".").joinpath("examples").joinpath("default")
 N_MAX = 2
 
 
-positions = ["X", "Y", "Z", "X_dot", "Y_dot", "Z_dot"]
 default_parameters: dict[str, float] = load_base_model(name="parameters", path=DEFAULT_PATH)
 default_parameters = update_parameters(parameters=default_parameters, potential=zeros(shape=(2, N_MAX + 1, N_MAX + 1)))
 parameter_names = default_parameters.keys()

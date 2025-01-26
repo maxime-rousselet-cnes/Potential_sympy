@@ -7,10 +7,10 @@ from typing import Callable, Optional
 from numpy import array, concatenate, matmul, ndarray
 from scipy.linalg import cholesky, solve_triangular
 
-from .constants import EPSILON_ARC_DURATION, INF, positions
+from .constants import EPSILON_ARC_DURATION, INF
 from .integrate import integrate, interpolate, theoretical_measurements
 from .measurement_models import get_station_dyamic_parameters
-from .utils import get_parameters, load_base_model, save_base_model
+from .utils import extend_parameters, get_parameters, load_base_model, save_base_model
 
 
 def measurements_to_matrix(measurements: dict[str, ndarray]) -> ndarray:
@@ -34,7 +34,9 @@ def remove_folder(folder_path):
 def generate_matrices(
     parameters: dict[str, float],
     interpolation: Callable,
+    extended_parameter_names: list[str],
     parameter_names: list[str],
+    id: str,
     station_measurements: dict[str, list[float]],
     station_parameters: dict[str, float | dict[str, float]],
 ) -> dict[str, ndarray]:
@@ -66,7 +68,7 @@ def orbit_restitution(
     # Gets all default/initial values and measurements.
     measurement_data: dict = load_base_model(name="measurements", path=Path("examples").joinpath(case_name))
     all_station_measurements: dict[str, dict[str, list[float]]] = measurement_data["stations"]
-    stations, parameters, integration_parameters, parameter_names, _ = get_parameters(case_name=case_name)
+    stations, parameters, integration_parameters, parameter_names, _, station_free_parameters = get_parameters(case_name=case_name)
 
     # Sets the arc to the minimum duration to get all measurements.
     integration_parameters["arc_duration"] = (
@@ -81,9 +83,10 @@ def orbit_restitution(
     )
     integration_parameters["altitude_limit"] = -1.0
 
-    # Updates the initial-initial position.
-    parameters = parameters | {position + "_0": initial_position for position, initial_position in zip(positions, measurement_data["R_0"])}
-    parameter_names += [position + "_0" for position in positions]
+    # Updates the initial-initial position and includes station parameters to constrain.
+    parameters, parameter_names, extended_parameters, extended_parameter_names = extend_parameters(
+        parameters=parameters, parameter_names=parameter_names, station_free_parameters=station_free_parameters, R_0=measurement_data["R_0"]
+    )
 
     # Clears result folder.
     result_folder = Path("examples").joinpath(case_name).joinpath("results")
@@ -104,7 +107,18 @@ def orbit_restitution(
         with Pool() as p:
             all_matrices = p.starmap(
                 generate_matrices,
-                [(parameters, interpolation, parameter_names, all_station_measurements[id], stations[id]) for id in stations.keys()],
+                [
+                    (
+                        parameters,
+                        interpolation,
+                        extended_parameter_names,
+                        parameter_names,
+                        id,
+                        all_station_measurements[id],
+                        stations[id],
+                    )  # TODO: replace by extended_parameters.
+                    for id in stations.keys()
+                ],
             )
 
         # Cumulates.
@@ -129,8 +143,10 @@ def orbit_restitution(
         x: ndarray = solve_triangular(a=L_matrix.T, b=Z_matrix)
 
         # Update parameters.
-        for parameter, delta_gamma in zip(parameter_names, x.flatten()):
-            parameters[parameter] += delta_gamma
+        for parameter, delta_gamma in zip(parameter_names, x.flatten()):  # TODO: replace with extended_parameter_names.
+            extended_parameters[parameter] += delta_gamma
+            if parameter in parameter_names:
+                parameters[parameter] += delta_gamma
 
         # With iteration number, saves the orbit, normal equations as A, B and parameter updated values.
         save_path = result_folder.joinpath(str(iteration))

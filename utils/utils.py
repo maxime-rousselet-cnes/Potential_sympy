@@ -5,6 +5,8 @@ from typing import Any, Optional
 from numpy import array, cos, ndarray, pi, sin, sqrt
 from pydantic import BaseModel
 
+positions = ["X", "Y", "Z", "X_dot", "Y_dot", "Z_dot"]
+
 
 def norm(R: ndarray[float]) -> float:
     return (sum(R[:3].flatten() ** 2)) ** 0.5
@@ -97,9 +99,14 @@ def update_parameters(parameters: dict[str, float], potential: list[list[list[fl
     return parameters
 
 
-def get_parameters(
-    case_name: Optional[str] = None, restitution: bool = True, path: Path = Path(".").joinpath("examples")
-) -> tuple[dict[str, dict[str, float | dict[str, float]]], dict[str, float], dict[str, float], Optional[list[str]], Optional[dict[str, float]]]:
+def get_parameters(case_name: Optional[str] = None, restitution: bool = True, path: Path = Path(".").joinpath("examples")) -> tuple[
+    dict[str, dict[str, float | dict[str, float]]],
+    dict[str, float],
+    dict[str, float],
+    Optional[list[str]],
+    Optional[dict[str, float]],
+    Optional[dict[str, dict[str, float]]],
+]:
 
     # Load all parameter files.
     if case_name is None:
@@ -118,10 +125,10 @@ def get_parameters(
 
     # Returns default case.
     if case_name == "default":
-        return stations, parameters, integration_parameters, None, initial_position_uncertainty
+        return stations, parameters, integration_parameters, None, initial_position_uncertainty, None
 
     # Updates default values.
-    default_stations, default_parameters, default_integration_parameters, _, default_initial_position_uncertainty = get_parameters(
+    default_stations, default_parameters, default_integration_parameters, _, default_initial_position_uncertainty, _ = get_parameters(
         case_name="default", path=path
     )
     for parameter in list(parameters.keys()):
@@ -129,12 +136,31 @@ def get_parameters(
             del parameters[parameter]
 
     return (
-        default_stations | stations,
+        default_stations | {id: default_stations[id] | station for id, station in stations.items()},
         default_parameters | parameters,
         default_integration_parameters | integration_parameters,
         list(parameters.keys()),
         default_initial_position_uncertainty | initial_position_uncertainty,
+        stations,
     )
+
+
+def extend_parameters(
+    parameters: dict[str, float],
+    parameter_names: list[str],
+    station_free_parameters: dict[str, dict[str, float]],
+    R_0: list[float],
+) -> tuple[dict[str, float], list[float], dict[str, float], list[str]]:
+    parameters = parameters | {position + "_0": initial_position for position, initial_position in zip(positions, R_0)}
+    parameter_names += [position + "_0" for position in positions]
+    station_free_parameters_flat = {}
+    for id, station in station_free_parameters.items():
+        station_free_parameters_flat = station_free_parameters_flat | {
+            "_".join(("station", id, parameter)): value for parameter, value in station.items()
+        }
+    extended_parameters = parameters | station_free_parameters_flat
+    extended_parameter_names = parameter_names + list(station_free_parameters_flat.keys())
+    return parameters, parameter_names, extended_parameters, extended_parameter_names
 
 
 def orbital_to_cartesian(

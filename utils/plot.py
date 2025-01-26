@@ -47,8 +47,8 @@ def plot_orbit(case_name: str = "case_no_free", figsize: tuple[float, float] = (
 def plot_errors(case_name: str = "case_no_free", figsize: tuple[float, float] = (10, 6), linewidth: int = 1) -> None:
     folders = list(Path(".").joinpath("examples").joinpath(case_name).joinpath("results").glob(pattern="*"))
     folders.sort(key=lambda path: int(path.name))
-    _, base_parameters, _, _, _ = get_parameters()
-    _, parameters, _, parameter_names, _ = get_parameters(case_name=case_name)
+    _, base_parameters, _, _, _, _ = get_parameters()
+    _, parameters, _, parameter_names, _, _ = get_parameters(case_name=case_name)
     parameter_names += [
         "X_0",
         "Y_0",
