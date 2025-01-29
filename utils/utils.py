@@ -136,7 +136,7 @@ def get_parameters(case_name: Optional[str] = None, restitution: bool = True, pa
             del parameters[parameter]
 
     return (
-        default_stations | {id: default_stations[id] | station for id, station in stations.items()},
+        update_stations(stations=default_stations, new_stations=stations),
         default_parameters | parameters,
         default_integration_parameters | integration_parameters,
         list(parameters.keys()),
@@ -145,22 +145,23 @@ def get_parameters(case_name: Optional[str] = None, restitution: bool = True, pa
     )
 
 
+def update_stations(
+    stations: dict[str, dict[str, float | dict[str, float]]], new_stations: dict[str, dict[str, float]]
+) -> dict[str, dict[str, float | dict[str, float]]]:
+    return stations | {id: stations[id] | station for id, station in new_stations.items()}
+
+
 def extend_parameters(
     parameters: dict[str, float],
     parameter_names: list[str],
-    station_free_parameters: dict[str, dict[str, float]],
     R_0: list[float],
 ) -> tuple[dict[str, float], list[float], dict[str, float], list[str]]:
     parameters = parameters | {position + "_0": initial_position for position, initial_position in zip(positions, R_0)}
     parameter_names += [position + "_0" for position in positions]
-    station_free_parameters_flat = {}
-    for id, station in station_free_parameters.items():
-        station_free_parameters_flat = station_free_parameters_flat | {
-            "_".join(("station", id, parameter)): value for parameter, value in station.items()
-        }
-    extended_parameters = parameters | station_free_parameters_flat
-    extended_parameter_names = parameter_names + list(station_free_parameters_flat.keys())
-    return parameters, parameter_names, extended_parameters, extended_parameter_names
+    return (
+        parameters,
+        parameter_names,
+    )
 
 
 def orbital_to_cartesian(

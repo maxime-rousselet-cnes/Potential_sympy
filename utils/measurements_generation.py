@@ -100,7 +100,7 @@ def generate_measurement_per_station(
         ]
 
     # Generates measurements.
-    measurements, _ = theoretical_measurements(
+    measurements, _, _ = theoretical_measurements(
         parameters=parameters,
         station_parameters=station_parameters,
         station_dynamic_parameters=station_dyamic_parameters,

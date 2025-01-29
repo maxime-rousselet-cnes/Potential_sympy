@@ -4,13 +4,13 @@ from os.path import exists
 from pathlib import Path
 from typing import Callable, Optional
 
-from numpy import array, concatenate, matmul, ndarray
+from numpy import array, concatenate, matmul, ndarray, zeros
 from scipy.linalg import cholesky, solve_triangular
 
 from .constants import EPSILON_ARC_DURATION, INF
 from .integrate import integrate, interpolate, theoretical_measurements
 from .measurement_models import get_station_dyamic_parameters
-from .utils import extend_parameters, get_parameters, load_base_model, save_base_model
+from .utils import extend_parameters, get_parameters, load_base_model, save_base_model, update_stations
 
 
 def measurements_to_matrix(measurements: dict[str, ndarray]) -> ndarray:
@@ -32,30 +32,31 @@ def remove_folder(folder_path):
 
 
 def generate_matrices(
-    parameters: dict[str, float],
-    interpolation: Callable,
-    extended_parameter_names: list[str],
     parameter_names: list[str],
-    id: str,
-    station_measurements: dict[str, list[float]],
+    parameters: dict[str, float],
     station_parameters: dict[str, float | dict[str, float]],
+    station_free_parameters: dict[str, float],
+    station_measurements: dict[str, list[float]],
+    interpolation: Callable,
 ) -> dict[str, ndarray]:
+
     station_dyamic_parameters = get_station_dyamic_parameters(station_parameters=station_parameters)
 
     # Gets dQ_j/dgamma_i via Leibniz formula.
-    measurements, A_matrix = theoretical_measurements(
+    measurements, A_dynamic_matrix, A_station_matrix = theoretical_measurements(
         parameters=parameters,
         station_parameters=station_parameters,
         station_dynamic_parameters=station_dyamic_parameters,
         measurement_times=station_measurements["measurement_times"],
         interpolation=interpolation,
         parameter_names=parameter_names,
+        station_parameter_names=list(station_free_parameters.keys()),
     )
 
     # Builds B as Delta_Q_j. Current_residuals.
     B_matrix = measurements_to_matrix(measurements=station_measurements) - measurements_to_matrix(measurements=measurements)
 
-    return {"A": A_matrix, "B": B_matrix}
+    return {"A_dynamic": A_dynamic_matrix, "A_station": A_station_matrix, "B": B_matrix}
 
 
 def orbit_restitution(
@@ -70,6 +71,14 @@ def orbit_restitution(
     all_station_measurements: dict[str, dict[str, list[float]]] = measurement_data["stations"]
     stations, parameters, integration_parameters, parameter_names, _, station_free_parameters = get_parameters(case_name=case_name)
 
+    # Does not constrain unused stations.
+    for id, station_measurements in all_station_measurements.items():
+        if (
+            len(station_measurements["measurement_times"]) < integration_parameters["min_measurements_per_station"]
+            and id in station_free_parameters.keys()
+        ):
+            del station_free_parameters[id]
+
     # Sets the arc to the minimum duration to get all measurements.
     integration_parameters["arc_duration"] = (
         max(
@@ -83,10 +92,8 @@ def orbit_restitution(
     )
     integration_parameters["altitude_limit"] = -1.0
 
-    # Updates the initial-initial position and includes station parameters to constrain.
-    parameters, parameter_names, extended_parameters, extended_parameter_names = extend_parameters(
-        parameters=parameters, parameter_names=parameter_names, station_free_parameters=station_free_parameters, R_0=measurement_data["R_0"]
-    )
+    # Updates the initial-initial position.
+    parameters, parameter_names = extend_parameters(parameters=parameters, parameter_names=parameter_names, R_0=measurement_data["R_0"])
 
     # Clears result folder.
     result_folder = Path("examples").joinpath(case_name).joinpath("results")
@@ -109,20 +116,32 @@ def orbit_restitution(
                 generate_matrices,
                 [
                     (
-                        parameters,
-                        interpolation,
-                        extended_parameter_names,
                         parameter_names,
-                        id,
-                        all_station_measurements[id],
+                        parameters,
                         stations[id],
-                    )  # TODO: replace by extended_parameters.
+                        {} if id not in station_free_parameters.keys() else station_free_parameters[id],
+                        all_station_measurements[id],
+                        interpolation,
+                    )
                     for id in stations.keys()
                 ],
             )
 
         # Cumulates.
-        A_matrix: ndarray = concatenate(list(matrices["A"] for matrices in all_matrices))
+        for id, station_parameters in station_free_parameters.items():
+            for i_station, current_id in enumerate(stations.keys()):
+                all_matrices[i_station]["A_dynamic"] = concatenate(
+                    (
+                        all_matrices[i_station]["A_dynamic"],
+                        (
+                            zeros(shape=(len(all_matrices[i_station]["A_dynamic"]), len(station_parameters)))
+                            if current_id != id
+                            else all_matrices[i_station]["A_station"]
+                        ),
+                    ),
+                    axis=1,
+                )
+        A_matrix: ndarray = concatenate(list(matrices["A_dynamic"] for matrices in all_matrices))
         B_matrix: ndarray = concatenate(list(matrices["B"] for matrices in all_matrices))
 
         # Stop criterion on parameter convergence.
@@ -140,19 +159,27 @@ def orbit_restitution(
         # Solves normal equations via Cholesky.
         L_matrix: ndarray = cholesky(N_matrix, lower=True)
         Z_matrix: ndarray = solve_triangular(a=L_matrix, b=S_matrix, lower=True)
-        x: ndarray = solve_triangular(a=L_matrix.T, b=Z_matrix)
+        x: ndarray = solve_triangular(a=L_matrix.T, b=Z_matrix).flatten()
 
-        # Update parameters.
-        for parameter, delta_gamma in zip(parameter_names, x.flatten()):  # TODO: replace with extended_parameter_names.
-            extended_parameters[parameter] += delta_gamma
-            if parameter in parameter_names:
-                parameters[parameter] += delta_gamma
+        # Updates parameters.
+        i_parameter = 0
+        for parameter in parameter_names:
+            parameters[parameter] += x[i_parameter]
+            i_parameter += 1
+
+        # Updates station parameters.
+        for id, station in station_free_parameters.items():
+            for parameter in station.keys():
+                station_free_parameters[id][parameter] += x[i_parameter]
+                i_parameter += 1
+        stations = update_stations(stations=stations, new_stations=station_free_parameters)
 
         # With iteration number, saves the orbit, normal equations as A, B and parameter updated values.
         save_path = result_folder.joinpath(str(iteration))
         save_base_model(obj={"t": t, "y": y}, name="orbit", path=save_path)
         save_base_model(obj=A_matrix, name="A", path=save_path)
         save_base_model(obj=B_matrix, name="B", path=save_path)
+        save_base_model(obj=station_free_parameters, name="station_free_parameter_values", path=save_path)
         save_base_model(
             obj={parameter: value for parameter, value in parameters.items() if parameter in parameter_names}, name="parameter_values", path=save_path
         )

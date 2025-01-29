@@ -6,5 +6,6 @@
     "max_iterations": 10,
     "altitude_limit": 200.0e3,
     "interpolation_order": 3,
-    "min_time_limit": 1000.0
+    "min_time_limit": 1000.0,
+    "min_measurements_per_station": 100
 }

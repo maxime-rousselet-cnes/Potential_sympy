@@ -1,4 +1,5 @@
 from itertools import product
+from multiprocessing import Pool
 
 from numpy import array, concatenate, dot, ndarray, transpose, zeros
 from scipy.integrate import RK45
@@ -20,6 +21,35 @@ from .utils import norm
 
 
 def integrate(
+    parameters: dict[str, float],
+    integration_parameters: dict[str, float],
+    parameter_names: list[str] = [],
+) -> tuple[list[float], ndarray[float]]:
+
+    if len(parameter_names) == 0:
+        return integrate_processing(parameters=parameters, integration_parameters=integration_parameters, parameter_names=parameter_names)
+    else:
+        with Pool() as p:
+            integrated_variations = {
+                parameter: {"t": t, "y": y}
+                for parameter, (t, y) in zip(
+                    parameter_names,
+                    p.starmap(
+                        integrate_processing,
+                        [(parameters, integration_parameters, [parameter]) for parameter in parameter_names],
+                    ),
+                )
+            }
+        return integrated_variations[parameter_names[0]]["t"], concatenate(
+            (
+                array(object=integrated_variations[parameter_names[0]]["y"])[:, :6],
+                concatenate([array(object=integrated_variations[parameter]["y"])[:, 6:] for parameter in parameter_names], axis=1),
+            ),
+            axis=1,
+        )
+
+
+def integrate_processing(
     parameters: dict[str, float],
     integration_parameters: dict[str, float],
     parameter_names: list[str] = [],
@@ -120,11 +150,13 @@ def theoretical_measurements(
     measurement_times: list[float],
     interpolation: BSpline,
     parameter_names: list[str] = [],
-) -> tuple[dict[str, ndarray[float]], ndarray[float]]:
+    station_parameter_names: list[str] = [],
+) -> tuple[dict[str, ndarray[float]], ndarray[float], ndarray[float]]:
 
     n_parameters = len(parameter_names)
+    n_station_parameters = len(station_parameter_names)
     if len(measurement_times) == 0:
-        return {}, zeros(shape=(0, n_parameters))
+        return {}, zeros(shape=(0, n_parameters)), zeros(shape=(0, n_station_parameters))
 
     noise_amplitudes: dict[str, float] = station_parameters["static_parameters"]["noise_amplitudes"]
     measurement_types = noise_amplitudes.keys()
@@ -160,27 +192,47 @@ def theoretical_measurements(
     dQ_dr_model = dQ_dr_model_generation(measurement_types=measurement_types)
     dQ_j_dr = array(
         object=[dQ_dr_model(R=R_on_measurements, R_station=R_station) for R_station, R_on_measurements in zip(station_positions, y_on_measurements)]
-    )  # Axes: (time, distance/doppler, coordinate).
+    )
 
     # Formats dr_j/dgamma_i. Axes: (time, coordinate, parameter).
-    dr_dgamma: ndarray = y_on_measurements[:, 6:]
-    dr_j_dgamma_i: ndarray
+    dr_dgamma_dynamic: ndarray = y_on_measurements[:, 6:]
 
-    # Gets dQ_j/dgamma_i.
-    dQ_dgamma_model = dQ_dgamma_model_generation(
+    full_symbols_to_values = symbols_to_values | str_dict_to_symbol_dict(
+        str_dictionary=station_dynamic_parameters, symbol_dictionary=STATION_PARAMETER_SYMBOLS
+    )
+
+    # Gets dQ_j/dgamma_i for dynamic parameters.
+    dQ_dgamma_dynamic_model = dQ_dgamma_model_generation(
         parameter_names=parameter_names,
         measurement_types=measurement_types,
-        symbols_to_values=symbols_to_values
-        | str_dict_to_symbol_dict(str_dictionary=station_dynamic_parameters, symbol_dictionary=STATION_PARAMETER_SYMBOLS),
+        symbols_to_values=full_symbols_to_values,
     )
-    dQ_j_dgamma = array(
-        object=[dQ_dgamma_model(R=R_on_measurements, t=t_i) for t_i, R_on_measurements in zip(measurement_times, y_on_measurements)]
-    )  # Axes: (time, distance/doppler, coordinate).
+    dQ_j_dgamma_dynamic = array(
+        object=[dQ_dgamma_dynamic_model(R=R_on_measurements, t=t_i) for t_i, R_on_measurements in zip(measurement_times, y_on_measurements)]
+    )
 
-    # Leibniz formula.
-    A_mat = zeros(shape=(n_measurement_types * n_times, n_parameters))
-    for i_t, (dr_j_dgamma_i, dQ_j_dgamma_i, dQ_j_dr_j) in enumerate(zip(dr_dgamma, dQ_j_dgamma, dQ_j_dr)):
-        for i, (dQ_j_dgamma_i_line, dQ_j_dr_j_line) in enumerate(zip(dQ_j_dgamma_i, dQ_j_dr_j)):
-            A_mat[n_measurement_types * i_t + i] = dot(a=dQ_j_dr_j_line, b=dr_j_dgamma_i.reshape((-1, 6)).T) + dQ_j_dgamma_i_line
+    # Gets dQ_j/dgamma_i for station parameters.
+    dQ_dgamma_station_model = dQ_dgamma_model_generation(
+        parameter_names=station_parameter_names,
+        measurement_types=measurement_types,
+        symbols_to_values=full_symbols_to_values,
+    )
+    dQ_j_dgamma_station = array(
+        object=[dQ_dgamma_station_model(R=R_on_measurements, t=t_i) for t_i, R_on_measurements in zip(measurement_times, y_on_measurements)]
+    )
 
-    return measurements, A_mat
+    A_dynamic_matrix = zeros(shape=(n_measurement_types * n_times, n_parameters))
+    A_station_matrix = zeros(shape=(n_measurement_types * n_times, n_station_parameters))
+    dr_j_dgamma_i_dynamic: ndarray
+    # Builds partial derivative matrices line by line.
+    for i_t, (dr_j_dgamma_i_dynamic, dQ_j_dgamma_i_dynamic, dQ_j_dgamma_i_station, dQ_j_dr_j) in enumerate(
+        zip(dr_dgamma_dynamic, dQ_j_dgamma_dynamic, dQ_j_dgamma_station, dQ_j_dr)
+    ):
+        for i, dQ_j_dr_j_dynamic_line in enumerate(dQ_j_dr_j):  # TODO: try to avoid looping.
+            # Leibniz formula.
+            A_dynamic_matrix[n_measurement_types * i_t + i] = dot(a=dQ_j_dr_j_dynamic_line, b=dr_j_dgamma_i_dynamic.reshape((-1, 6)).T)
+        A_dynamic_matrix[n_measurement_types * i_t : n_measurement_types * (i_t + 1)] += dQ_j_dgamma_i_dynamic
+        if len(dQ_j_dgamma_i_station) != 0:
+            A_station_matrix[n_measurement_types * i_t : n_measurement_types * (i_t + 1)] += dQ_j_dgamma_i_station
+
+    return measurements, A_dynamic_matrix, A_station_matrix

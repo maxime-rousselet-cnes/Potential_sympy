@@ -107,7 +107,7 @@ def dQ_dgamma_model_generation(
                                 ),
                             ],
                         )
-                        for parameter, symbol in PARAMETER_SYMBOLS.items()
+                        for parameter, symbol in list(PARAMETER_SYMBOLS.items()) + list(STATION_PARAMETER_SYMBOLS.items())
                         if parameter in parameter_names
                     )
                 )
