@@ -15,7 +15,10 @@ def potential_force_sym(R: MutableDenseMatrix, parameters: dict[str, Symbol]) ->
             1
             + sum([(parameters["R_T"] / r) ** l * (assoc_legendre(l, 0, sin_colat) * parameters["C_" + str(l) + "_0"]) for l in range(2, l_max + 1)])
         )
-    )  # Zonal coefficients only. TODO:
+    )  # Zonal coefficients only.
+    # TODO:
+    # - Add tesseral coefficients dependency.
+    # - Add Earth rotation dependency.
     """
     rho = (R[0] ** 2 + R[1] ** 2) ** 0.5
     sin_lon = R[1] / rho
