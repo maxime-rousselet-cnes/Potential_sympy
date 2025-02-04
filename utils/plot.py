@@ -3,6 +3,7 @@ from typing import Optional
 
 from matplotlib.pyplot import figure, legend, plot, show, subplots, title, xlabel, ylabel
 from numpy import array, ndarray
+from seaborn import heatmap
 
 from .constants import default_parameters
 from .integrate import norm
@@ -73,3 +74,26 @@ def plot_errors(case_name: str = "case_no_free", figsize: tuple[float, float] = 
     ylabel("Absolute error on parameters")
     legend()
     show()
+
+
+def plot_correlations(case_name: str = "case_no_free", figsize: tuple[float, float] = (10, 6), linewidth: int = 1) -> None:
+    folders = list(Path(".").joinpath("examples").joinpath(case_name).joinpath("results").glob(pattern="*"))
+    folders.sort(key=lambda path: int(path.name))
+    _, parameters, _, parameter_names, _, _ = get_parameters(case_name=case_name)
+    parameter_names += [
+        "X_0",
+        "Y_0",
+        "Z_0",
+        "X_dot_0",
+        "Y_dot_0",
+        "Z_dot_0",
+    ]
+    for folder in folders:
+        correlation_matrix = array(object=load_base_model(name="correlation_matrix", path=folder))
+        correlation_matrix /= max(abs(correlation_matrix).flatten())
+        figure(figsize=figsize)
+        heatmap(data=correlation_matrix)
+        title("Iteration " + folder.name)
+        xlabel("")
+        ylabel("")
+        show()

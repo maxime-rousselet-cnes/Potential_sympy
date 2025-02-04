@@ -4,8 +4,8 @@ from os.path import exists
 from pathlib import Path
 from typing import Callable, Optional
 
-from numpy import array, concatenate, matmul, ndarray, zeros
-from scipy.linalg import cholesky, solve_triangular
+from numpy import array, concatenate, expand_dims, matmul, ndarray, repeat, zeros
+from scipy.linalg import cholesky, inv, solve_triangular
 
 from .constants import EPSILON_ARC_DURATION, INF
 from .integrate import integrate, interpolate, theoretical_measurements
@@ -55,8 +55,9 @@ def generate_matrices(
 
     # Builds B as Delta_Q_j. Current_residuals.
     B_matrix = measurements_to_matrix(measurements=station_measurements) - measurements_to_matrix(measurements=measurements)
+    noise_amplitudes: dict = station_parameters["static_parameters"]["noise_amplitudes"]
 
-    return {"A_dynamic": A_dynamic_matrix, "A_station": A_station_matrix, "B": B_matrix}
+    return {"A_dynamic": A_dynamic_matrix, "A_station": A_station_matrix, "B": B_matrix, "w": array(object=list(noise_amplitudes.values()))}
 
 
 def orbit_restitution(
@@ -155,6 +156,17 @@ def orbit_restitution(
         # Builds semi-definite positive system to solve.
         N_matrix: ndarray = matmul(A_matrix.T, A_matrix)
         S_matrix: ndarray = matmul(A_matrix.T, B_matrix)
+        correlation_matrix: ndarray = inv(
+            a=matmul(
+                A_matrix.T,
+                expand_dims(
+                    a=concatenate([repeat(a=matrices["w"], repeats=len(matrices["A_dynamic"]) // len(matrices["w"])) for matrices in all_matrices]),
+                    axis=1,
+                )
+                ** (-2.0)
+                * A_matrix,
+            )
+        )
 
         # Solves normal equations via Cholesky.
         L_matrix: ndarray = cholesky(N_matrix, lower=True)
@@ -180,6 +192,7 @@ def orbit_restitution(
         save_base_model(obj=A_matrix, name="A", path=save_path)
         save_base_model(obj=B_matrix, name="B", path=save_path)
         save_base_model(obj=station_free_parameters, name="station_free_parameter_values", path=save_path)
+        save_base_model(obj=correlation_matrix, name="correlation_matrix", path=save_path)
         save_base_model(
             obj={parameter: value for parameter, value in parameters.items() if parameter in parameter_names}, name="parameter_values", path=save_path
         )
