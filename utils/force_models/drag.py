@@ -18,4 +18,4 @@ def drag_sym(R: MutableDenseMatrix, parameters: dict[str, Symbol]) -> MutableDen
         thermosphere_ref_altitude=parameters["thermosphere_ref_altitude"],
         thermosphere_scale_factor=parameters["thermosphere_scale_factor"],
     )
-    return -0.5 * parameters["C_x"] * parameters["surface_mass_ratio"] * rho_atm * norm_sym(R=speed_sym(R=R)) * speed_sym(R=R)
+    return -0.5 * parameters["C_D"] * parameters["surface_mass_ratio"] * rho_atm * norm_sym(R=speed_sym(R=R)) * speed_sym(R=R)

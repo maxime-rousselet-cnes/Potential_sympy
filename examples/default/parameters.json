@@ -1,7 +1,7 @@
 {
     "GM": 398600435507000.0,
     "R_T": 6378137.0,
-    "C_x": 2.0,
+    "C_D": 2.0,
     "surface_mass_ratio": 10.0,
     "rho_thermosphere_base": 1e-10,
     "thermosphere_ref_altitude": 200e3,
