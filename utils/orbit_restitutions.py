@@ -160,10 +160,11 @@ def orbit_restitution(
         # Solves normal equations via Cholesky.
         L_matrix: ndarray = cholesky(N_matrix, lower=True)
         Z_matrix: ndarray = solve_triangular(a=L_matrix, b=S_matrix, lower=True)
-        x: ndarray = solve_triangular(a=L_matrix.T, b=Z_matrix).flatten()
+        x: ndarray = solve_triangular(a=L_matrix.T, b=Z_matrix)
 
         # Correlation_matrix.
         residual_matrix: ndarray = matmul(A_matrix, x) - B_matrix
+        x = x.flatten()
         correlation_matrix: ndarray = matmul(
             residual_matrix.T,
             expand_dims(
@@ -172,7 +173,7 @@ def orbit_restitution(
             )
             ** (-2.0)
             * residual_matrix,
-        )
+        ) * inv(a=N_matrix)
 
         # Updates parameters.
         i_parameter = 0

@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Optional
 
 from matplotlib.pyplot import figure, legend, plot, show, subplots, title, xlabel, ylabel
-from numpy import array, ndarray
+from numpy import array, concatenate, ndarray, zeros
 from seaborn import heatmap
 
 from .constants import default_parameters
@@ -76,10 +76,10 @@ def plot_errors(case_name: str = "case_no_free", figsize: tuple[float, float] = 
     show()
 
 
-def plot_correlations(case_name: str = "case_no_free", figsize: tuple[float, float] = (10, 6), linewidth: int = 1) -> None:
+def plot_correlations(case_name: str = "case_no_free", figsize: tuple[float, float] = (10, 6), iterate: bool = False) -> None:
     folders = list(Path(".").joinpath("examples").joinpath(case_name).joinpath("results").glob(pattern="*"))
     folders.sort(key=lambda path: int(path.name))
-    _, parameters, _, parameter_names, _, _ = get_parameters(case_name=case_name)
+    _, _, _, parameter_names, _, stations = get_parameters(case_name=case_name)
     parameter_names += [
         "X_0",
         "Y_0",
@@ -87,12 +87,19 @@ def plot_correlations(case_name: str = "case_no_free", figsize: tuple[float, flo
         "X_dot_0",
         "Y_dot_0",
         "Z_dot_0",
-    ]
-    for folder in folders:
+    ] + list(
+        concatenate(
+            [["_".join((id, parameter)) for parameter in list(station_free_parameters.keys())] for id, station_free_parameters in stations.items()]
+        )
+    )
+    for folder in folders if iterate else [folders[-1]]:
         correlation_matrix = array(object=load_base_model(name="correlation_matrix", path=folder))
-        correlation_matrix /= max(abs(correlation_matrix).flatten())
+        normalized_correlation_matrix = zeros(correlation_matrix.shape)
+        for i in range(len(parameter_names)):
+            for j in range(len(parameter_names)):
+                normalized_correlation_matrix[i, j] = correlation_matrix[i, j] / (correlation_matrix[i, i] * correlation_matrix[j, j]) ** 0.5
         figure(figsize=figsize)
-        heatmap(data=correlation_matrix)
+        heatmap(data=normalized_correlation_matrix, xticklabels=parameter_names, yticklabels=parameter_names)
         title("Iteration " + folder.name)
         xlabel("")
         ylabel("")
