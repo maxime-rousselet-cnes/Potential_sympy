@@ -87,9 +87,16 @@ def plot_correlations(case_name: str = "case_no_free", figsize: tuple[float, flo
         "X_dot_0",
         "Y_dot_0",
         "Z_dot_0",
-    ] + list(
-        concatenate(
-            [["_".join((id, parameter)) for parameter in list(station_free_parameters.keys())] for id, station_free_parameters in stations.items()]
+    ] + (
+        []
+        if len(stations) == 0
+        else list(
+            concatenate(
+                [
+                    ["_".join((id, parameter)) for parameter in list(station_free_parameters.keys())]
+                    for id, station_free_parameters in stations.items()
+                ]
+            )
         )
     )
     for folder in folders if iterate else [folders[-1]]:
