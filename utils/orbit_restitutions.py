@@ -57,7 +57,7 @@ def generate_matrices(
     B_matrix = measurements_to_matrix(measurements=station_measurements) - measurements_to_matrix(measurements=measurements)
     noise_amplitudes: dict = station_parameters["static_parameters"]["noise_amplitudes"]
 
-    return {"A_dynamic": A_dynamic_matrix, "A_station": A_station_matrix, "B": B_matrix, "w": array(object=list(noise_amplitudes.values()))}
+    return {"A_dynamic": A_dynamic_matrix, "A_station": A_station_matrix, "B": B_matrix, "sigma": array(object=list(noise_amplitudes.values()))}
 
 
 def orbit_restitution(
@@ -144,6 +144,10 @@ def orbit_restitution(
                 )
         A_matrix: ndarray = concatenate(list(matrices["A_dynamic"] for matrices in all_matrices))
         B_matrix: ndarray = concatenate(list(matrices["B"] for matrices in all_matrices))
+        W_matrix = expand_dims(
+            a=concatenate([repeat(a=matrices["sigma"], repeats=len(matrices["A_dynamic"]) // len(matrices["sigma"])) for matrices in all_matrices]),
+            axis=1,
+        ) ** (-2.0)
 
         # Stop criterion on parameter convergence.
         convergence_criterion = abs(SE(B=previous_residuals) - SE(B=B_matrix)) / SE(B=previous_residuals)
@@ -154,8 +158,8 @@ def orbit_restitution(
             previous_residuals = B_matrix
 
         # Builds semi-definite positive system to solve.
-        N_matrix: ndarray = matmul(A_matrix.T, A_matrix)
-        S_matrix: ndarray = matmul(A_matrix.T, B_matrix)
+        N_matrix: ndarray = matmul(A_matrix.T, W_matrix * A_matrix)
+        S_matrix: ndarray = matmul(A_matrix.T, W_matrix * B_matrix)
 
         # Solves normal equations via Cholesky.
         L_matrix: ndarray = cholesky(N_matrix, lower=True)
@@ -167,12 +171,7 @@ def orbit_restitution(
         x = x.flatten()
         correlation_matrix: ndarray = matmul(
             residual_matrix.T,
-            expand_dims(
-                a=concatenate([repeat(a=matrices["w"], repeats=len(matrices["A_dynamic"]) // len(matrices["w"])) for matrices in all_matrices]),
-                axis=1,
-            )
-            ** (-2.0)
-            * residual_matrix,
+            W_matrix * residual_matrix,
         ) * inv(a=N_matrix)
 
         # Updates parameters.
